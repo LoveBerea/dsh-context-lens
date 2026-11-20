@@ -1,0 +1,3 @@
+- insert:
+    - id: context-lens
+      name: dsh-context-lens

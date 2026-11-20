@@ -1,0 +1,55 @@
+{
+  "name": "dsh-context-lens",
+  "version": "0.1.0",
+  "description": "Context cache analysis for dsh sessions: turn-grouped, separately collapsible reasoning and output, with input-context overlap and diff.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./analysis": "./src/analysis.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "src/analysis.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "dsh": "^0.2.2-rc.5",
+    "node": ">=24.9.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "cordis",
+    "context",
+    "cache-analysis",
+    "reasoning"
+  ],
+  "license": "MIT",
+  "author": "LoveBerea",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LoveBerea/dsh-context-lens.git"
+  },
+  "homepage": "https://github.com/LoveBerea/dsh-context-lens#readme"
+}
