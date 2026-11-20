@@ -50,17 +50,18 @@ window.__ModuleLoader__.load({
 [data-context-lens-page] .clp-diff { padding: 4px 4px 8px 26px; }
 [data-context-lens-page] .clp-diffHead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 2px 4px 6px; font-weight: 500; }
 [data-context-lens-page] .clp-diffNote { color: var(--dsw-alias-label-tertiary, inherit); font-size: 11px; font-weight: 400; }
-[data-context-lens-page] .clp-shared { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; background: var(--dsw-alias-interactive-bg, rgba(127,127,127,.08)); color: var(--dsw-alias-label-tertiary, inherit); }
-[data-context-lens-page] .clp-shared:before { content: '▸'; }
-[data-context-lens-page] .clp-regionItem { margin-top: 4px; padding: 4px 8px; border: 1px solid transparent; border-left-width: 3px; border-radius: 6px; }
-[data-context-lens-page] .clp-regionItem[data-kind='added'] { border-left-color: var(--dsw-alias-state-info-primary, #2f6fed); background: var(--dsw-alias-state-info-bg, rgba(47,111,237,.12)); }
-[data-context-lens-page] .clp-regionItem[data-kind='removed'] { border-left-color: var(--dsw-alias-state-success-primary, #79b879); background: var(--dsw-alias-state-success-bg, #e6f4ea); }
+[data-context-lens-page] .clp-regionItem { margin-top: 4px; padding: 4px 8px; border: 1px solid transparent; border-left-width: 3px; border-radius: 6px; color: var(--dsw-alias-label-primary, inherit); }
+[data-context-lens-page] .clp-regionItem[data-kind='added'] { border-left-color: var(--dsw-alias-interactive-accent, #4c8bf5); background: color-mix(in srgb, var(--dsw-alias-interactive-accent, #4c8bf5) 14%, transparent); }
+[data-context-lens-page] .clp-regionItem[data-kind='removed'] { border-left-color: var(--dsw-alias-state-success-primary, #79b879); background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #79b879) 14%, transparent); }
 [data-context-lens-page] .clp-regionItem[data-kind='same'] { border-left-color: var(--dsw-alias-border-l2, rgba(127,127,127,.3)); }
+[data-context-lens-page] .clp-regionItem .clp-itemRole,
+[data-context-lens-page] .clp-regionItem .clp-itemPreview,
+[data-context-lens-page] .clp-regionItem .clp-chevron { color: inherit; }
 [data-context-lens-page] .clp-itemHead { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 22px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 [data-context-lens-page] .clp-itemHead:focus-visible { outline: 2px solid var(--dsw-alias-interactive-accent, #4c8bf5); outline-offset: 2px; }
 [data-context-lens-page] .clp-badge { flex: none; padding: 0 6px; border-radius: 999px; font-size: 11px; }
-[data-context-lens-page] .clp-regionItem[data-kind='added'] .clp-badge { color: var(--dsw-alias-state-info-primary, #2f6fed); background: var(--dsw-alias-state-info-bg, rgba(47,111,237,.12)); }
-[data-context-lens-page] .clp-regionItem[data-kind='removed'] .clp-badge { color: var(--dsw-alias-state-success-primary, #4f8a4f); background: var(--dsw-alias-state-success-bg, #e6f4ea); }
+[data-context-lens-page] .clp-regionItem[data-kind='added'] .clp-badge { color: var(--dsw-alias-interactive-accent, #7aabff); background: color-mix(in srgb, var(--dsw-alias-interactive-accent, #4c8bf5) 20%, transparent); }
+[data-context-lens-page] .clp-regionItem[data-kind='removed'] .clp-badge { color: var(--dsw-alias-state-success-primary, #8fd18f); background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #79b879) 20%, transparent); }
 [data-context-lens-page] .clp-itemRole { flex: none; color: var(--dsw-alias-label-tertiary, inherit); font-size: 11px; }
 [data-context-lens-page] .clp-itemPreview { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-context-lens-page] .clp-blank { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--dsw-alias-label-tertiary, inherit); }
@@ -102,7 +103,7 @@ window.__ModuleLoader__.load({
       replay: '思考重注入',
       contextDiff: '上下文差异',
       diffHint: '区域不同，不是内容改动 diff',
-      sharedFixed: '与上一轮完全相同：{count} 项（固定折叠）',
+      sharedFixed: '与上一轮完全相同：{count} 项（可展开）',
       addedBadge: '+ 新增',
       removedBadge: '− 移除',
       sameBadge: '相同',
@@ -140,7 +141,7 @@ window.__ModuleLoader__.load({
       replay: 'Reasoning replay',
       contextDiff: 'Context differences',
       diffHint: 'Region differences, not an edit diff',
-      sharedFixed: 'Identical to previous turn: {count} items (always folded)',
+      sharedFixed: 'Identical to previous turn: {count} items (expandable)',
       addedBadge: '+ added',
       removedBadge: '− removed',
       sameBadge: 'same',
@@ -192,18 +193,33 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function DiffRegion({ comparison, t, open, toggle }) {
+    function DiffRegion({ comparison, t, open, toggle, step }) {
       const items = comparison?.currentItems ?? []
       const prefix = comparison?.commonPrefix ?? 0
       const addedKeys = new Set((comparison?.added ?? []).map(itemKeyOf))
+      const shared = items.slice(0, prefix)
       const suffix = items.slice(prefix)
       const removed = comparison?.removed ?? []
+      const sharedKey = 'shared-prefix'
+      const sharedOpen = open[sharedKey] === undefined ? step === 1 : open[sharedKey] === true
       return h('div', { className: 'clp-diff' },
         h('div', { className: 'clp-diffHead' },
           h('span', {}, t('contextDiff')),
           h('span', { className: 'clp-diffNote' }, t('diffHint')),
         ),
-        h('div', { className: 'clp-shared', 'data-fixed': 'true' }, t('sharedFixed', { count: prefix })),
+        h(Fold, {
+          glyph: '▸',
+          title: t('sharedFixed', { count: prefix }),
+          open: sharedOpen,
+          onToggle: toggle(sharedKey),
+        }, shared.map(item => h(RegionItem, {
+          key: itemKeyOf(item),
+          item,
+          kind: 'same',
+          label: t('sameBadge'),
+          open: open[itemKeyOf(item)] === true,
+          onToggle: toggle(itemKeyOf(item)),
+        }))),
         suffix.length === 0 && removed.length === 0
           ? h('p', { className: 'clp-empty' }, t('diffEmpty'))
           : null,
@@ -362,7 +378,7 @@ window.__ModuleLoader__.load({
                   h('div', { className: 'clp-barFill', style: { width: `${ratio}%` } }),
                 ),
                 replay > 0 ? h('p', { className: 'clp-hint' }, t('replayHint')) : null,
-                comparison === null ? null : h(DiffRegion, { comparison, t, open, toggle }),
+                comparison === null ? null : h(DiffRegion, { comparison, t, open, toggle, step: output.step }),
                 h('div', { className: 'clp-folds' },
                   h(Fold, {
                     glyph: '◌', title: t('reasoning'), preview: preview(output.reasoning),

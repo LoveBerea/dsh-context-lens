@@ -137,7 +137,7 @@ test('renders turn-grouped folds with a below-100 overlap and replay warning', (
   assert.equal(hookIndex, 4)
 })
 
-test('marks removed context regions and keeps identical items folded', () => {
+test('expands the shared prefix on step one and marks removed regions', () => {
   const main = registrations.find(entry => entry.meta.name === 'main')
   const comparison = {
     turn: 1,
@@ -168,6 +168,34 @@ test('marks removed context regions and keeps identical items folded', () => {
   assert.ok(text.includes('removedBadge'))
   assert.ok(text.includes('data-kind":"removed"'))
   assert.ok(text.includes('data-kind":"same"'))
-  assert.ok(text.includes('data-fixed":"true"'))
   assert.ok(text.includes('sharedFixed'))
+  assert.ok(text.includes('"aria-expanded":true'))
+  assert.ok(text.includes('kept'), 'shared prefix items must be visible on the first step')
+})
+
+test('collapses the shared prefix by default on later steps', () => {
+  const main = registrations.find(entry => entry.meta.name === 'main')
+  const comparison = {
+    currentItems: [{ role: 'user', id: 'u1', text: 'kept', reasoning: '' }],
+    commonPrefix: 1,
+    overlapRatio: 1,
+    newCount: 0,
+    replayedReasoning: [],
+    added: [],
+    removed: [],
+  }
+  hookStates = ['s1', 'recent', {
+    outputs: [{ turn: 1, step: 2, reasoning: '', response: 'ok', tools: [] }],
+    comparisons: [{ turn: 1, step: 2, recent: comparison }],
+  }, {}]
+  hookIndex = 0
+  const tree = main.component({
+    t: key => key,
+    useSessions: selector => selector({ ids: ['s1'], byId: { s1: { displayTitle: 'Demo', retainedBy: {} } } }),
+    watch: () => () => {},
+    snapshotOf: () => hookStates[2],
+  })
+  const text = JSON.stringify(tree)
+  assert.ok(text.includes('sharedFixed'))
+  assert.ok(!text.includes('kept'), 'shared prefix stays folded on later steps')
 })
