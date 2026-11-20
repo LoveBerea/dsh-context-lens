@@ -135,6 +135,28 @@ test('applies surface replace before rebuilding later contexts', () => {
   assert.equal(analysis.comparisons[1].removed.length, 1)
 })
 
+test('does not report re-logged identical context as removed', () => {
+  const systemEvent = seq => event('system/message', {
+    turn: 1, step: 1, message: { role: 'system', content: [{ type: 'text', text: 'SYS' }] },
+  }, seq)
+  const entries = [
+    systemEvent(1),
+    event('assistant/message', {
+      turn: 1, step: 1, message: message([{ type: 'text', text: 'a' }], 'a1'),
+    }, 2),
+    systemEvent(3),
+    event('assistant/message', {
+      turn: 2, step: 1, message: message([{ type: 'text', text: 'b' }], 'a2'),
+    }, 4),
+  ]
+  const analysis = analyzeEvents(entries)
+  const recent = comparisonFor(analysis, 2, 1, 'recent')
+  assert.equal(recent.currentItems.length, 2)
+  assert.equal(recent.added.length, 1)
+  assert.equal(recent.removed.length, 0)
+  assert.equal(recent.overlapRatio, 0.5)
+})
+
 test('grows overlap below 100% and compares against previous or several turns', () => {
   const entries = [
     event('step/start', { turn: 1, step: 1 }, 1),

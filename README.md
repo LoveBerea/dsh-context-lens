@@ -23,7 +23,7 @@ dsh plugin --profile web add github:LoveBerea/dsh-context-lens
 
 - **重合率（overlap）**：本次上下文中「此前已经出现过」的条目数 / 本次上下文条目数。因此本轮只要新增了上下文或思考被重新注入，重合率就低于 100%。
 - **对比范围**：可切换「上一轮」「前 3 轮」「全部历史」。前几轮模式把多个历史上下文与历史输出合并成参照集合。
-- **新增 / 移除**：按消息身份（消息 id，或内容摘要）做多重集差集。
+- **新增 / 移除**：按消息身份去重后做差集；system / user / tool 条目用内容摘要身份，同一内容在不同事件序号重复出现不会同时被算作「相同」和「移除」。
 - **思考重注入（reasoning replay）**：本次上下文中的 `reasoning` 块，其文本与选定范围内任一轮次产出的思考完全相同。页面同时显示重注入条数与占本次思考块的比例。
 
 Host 侧另外监听 `llm/stream`，记录适配器实际收到的 `options.messages`，可通过 `import { historyOf } from 'dsh-context-lens'` 读取某个 session 的最近 200 次请求比对结果。Web 侧显示的是从 Session 事件重建的结果；它覆盖当前已加载的事件窗口，且不描述 provider 序列化阶段是否真的把 reasoning 发到线上。

@@ -143,24 +143,37 @@ export function compareContexts(previous, current, meta = {}) {
   }
 }
 
+function contentId(role, text, reasoning = '') {
+  return hashOf(`${role}\u0000${text}\u0000${reasoning}`)
+}
+
 function itemFromEvent(event) {
   const data = event.data
   switch (event.type) {
     case 'system/message':
-    case 'developer/message':
-      return { role: 'system', id: `seq:${event.seq}`, text: textOf(data.message?.content), reasoning: '', seq: event.seq }
-    case 'user/message':
-      return { role: 'user', id: `seq:${event.seq}`, text: textOf(data.content), reasoning: '', seq: event.seq }
-    case 'assistant/message':
+    case 'developer/message': {
+      const text = textOf(data.message?.content)
+      return { role: 'system', id: contentId('system', text), text, reasoning: '', seq: event.seq }
+    }
+    case 'user/message': {
+      const text = textOf(data.content)
+      return { role: 'user', id: contentId('user', text), text, reasoning: '', seq: event.seq }
+    }
+    case 'assistant/message': {
+      const text = responseOf(data.message?.content)
+      const reasoning = reasoningOf(data.message?.content)
       return {
         role: 'assistant',
-        id: typeof data.message?.id === 'string' ? data.message.id : `seq:${event.seq}`,
-        text: responseOf(data.message?.content),
-        reasoning: reasoningOf(data.message?.content),
+        id: typeof data.message?.id === 'string' ? data.message.id : contentId('assistant', text, reasoning),
+        text,
+        reasoning,
         seq: event.seq,
       }
-    case 'tool/result':
-      return { role: 'tool', id: `seq:${event.seq}`, text: textOf(data.message?.content), reasoning: '', seq: event.seq }
+    }
+    case 'tool/result': {
+      const text = textOf(data.message?.content)
+      return { role: 'tool', id: contentId('tool', text), text, reasoning: '', seq: event.seq }
+    }
     default:
       return null
   }
@@ -228,27 +241,38 @@ export function analyzeEvents(entries) {
     output.tools = toolCalls.get(`${output.turn}:${output.step}`) ?? []
   }
 
+  const dedupe = (items) => {
+    const seen = new Set()
+    return items.filter(item => {
+      const key = identityOf(item)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
   const comparisons = steps.map((step, index) => {
     const meta = { turn: step.turn, step: step.step, atSeq: step.seq }
-    const immediate = index === 0 ? [] : steps[index - 1].items
+    const current = dedupe(step.items)
+    const immediate = index === 0 ? [] : dedupe(steps[index - 1].items)
     const unionOf = (count) => {
       const from = count === Infinity ? 0 : Math.max(0, index - count)
-      return steps.slice(from, index).flatMap(candidate => candidate.items)
+      return dedupe(steps.slice(from, index).flatMap(candidate => candidate.items))
     }
     const prefix = (prior) => {
       let length = 0
-      while (length < prior.length && length < step.items.length
-        && identityOf(prior[length]) === identityOf(step.items[length])) {
+      while (length < prior.length && length < current.length
+        && identityOf(prior[length]) === identityOf(current[length])) {
         length += 1
       }
       return length
     }
     const build = (prior, lookback, from) => {
       const priorReasoning = outputs.slice(from, index).map(output => output.reasoning).filter(Boolean)
-      const result = compareContexts(prior, step.items, { ...meta, lookback, priorReasoning })
+      const result = compareContexts(prior, current, { ...meta, lookback, priorReasoning })
       result.commonPrefix = prefix(immediate)
-      result.prefixRatio = result.commonPrefix / Math.max(step.items.length, 1)
-      result.currentItems = step.items
+      result.prefixRatio = result.commonPrefix / Math.max(current.length, 1)
+      result.currentItems = current
       result.priorItems = prior
       return result
     }
