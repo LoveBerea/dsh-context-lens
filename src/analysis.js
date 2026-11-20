@@ -63,6 +63,11 @@ function identityOf(item) {
   return `${item.role}:${item.id.startsWith('index:') ? hashOf(`${item.text}\u0000${item.reasoning}`) : item.id}`
 }
 
+/** Stable identity usable as a React key across turns and windows. */
+export function itemKeyOf(item) {
+  return identityOf(item)
+}
+
 function reasoningIdentityOf(item) {
   return hashOf(item.reasoning.trim())
 }
@@ -243,6 +248,8 @@ export function analyzeEvents(entries) {
       const result = compareContexts(prior, step.items, { ...meta, lookback, priorReasoning })
       result.commonPrefix = prefix(immediate)
       result.prefixRatio = result.commonPrefix / Math.max(step.items.length, 1)
+      result.currentItems = step.items
+      result.priorItems = prior
       return result
     }
     const previous = build(immediate, 1, Math.max(0, index - 1))

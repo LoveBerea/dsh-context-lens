@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  analyzeEvents, compareContexts, comparisonFor, hashOf, reasoningOf, responseOf, summarizeMessages, textOf,
+  analyzeEvents, compareContexts, comparisonFor, hashOf, itemKeyOf, reasoningOf, responseOf, summarizeMessages, textOf,
 } from '../src/analysis.js'
 
 function message(content, id) {
@@ -33,6 +33,14 @@ test('summarizes provider messages into comparable items', () => {
   assert.equal(items[0].text, 'hello')
   assert.equal(items[1].reasoning, 'think')
   assert.equal(items[1].id, 'a1')
+})
+
+test('uses stable item keys across turns', () => {
+  const first = { role: 'assistant', id: 'a1', text: 'same', reasoning: '' }
+  const second = { role: 'assistant', id: 'a1', text: 'same', reasoning: '', seq: 99 }
+  assert.equal(itemKeyOf(first), itemKeyOf(second))
+  const derived = { role: 'user', id: 'index:0', text: 'hello', reasoning: '' }
+  assert.equal(itemKeyOf(derived), itemKeyOf({ ...derived, seq: 42 }))
 })
 
 test('detects prefix, additions, removals, and replayed reasoning', () => {

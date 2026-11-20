@@ -15,7 +15,8 @@ assert.ok(source.includes("'main'"), 'client bundle must register the standalone
 assert.ok(!source.includes('conversation.chat.node'), 'analysis must not live inside the chat transcript')
 
 function createElement(type, props, ...children) {
-  return { type, props: { ...props, children } }
+  const element = { type, props: { ...props, children } }
+  return typeof type === 'function' ? type(element.props) : element
 }
 
 let hookStates = []
@@ -127,10 +128,46 @@ test('renders turn-grouped folds with a below-100 overlap and replay warning', (
   })
   const text = JSON.stringify(tree)
   for (const key of ['title', 'selectSession', 'range', 'turns', 'average', 'turn', 'step', 'overlap',
-    'added', 'replay', 'contextDiff', 'reasoning', 'response', 'tools', 'replayHint']) {
+    'added', 'replay', 'contextDiff', 'diffHint', 'sharedFixed', 'addedBadge',
+    'reasoning', 'response', 'tools', 'replayHint']) {
     assert.ok(text.includes(key), `standalone page should render ${key}`)
   }
   assert.ok(text.includes('overlap 50%'), 'adding new context must produce overlap below 100%')
   assert.ok(text.includes('Demo session'))
   assert.equal(hookIndex, 4)
+})
+
+test('marks removed context regions and keeps identical items folded', () => {
+  const main = registrations.find(entry => entry.meta.name === 'main')
+  const comparison = {
+    turn: 1,
+    step: 1,
+    currentItems: [
+      { role: 'user', id: 'u1', text: 'kept', reasoning: '' },
+      { role: 'user', id: 'u2', text: 'replaced', reasoning: '' },
+    ],
+    commonPrefix: 1,
+    overlapRatio: 0.5,
+    newCount: 0,
+    replayedReasoning: [],
+    added: [],
+    removed: [{ role: 'user', id: 'u2', text: 'gone', reasoning: '' }],
+  }
+  hookStates = ['s1', 'recent', {
+    outputs: [{ turn: 1, step: 1, reasoning: '', response: 'ok', tools: [] }],
+    comparisons: [{ turn: 1, step: 1, recent: comparison }],
+  }, {}]
+  hookIndex = 0
+  const tree = main.component({
+    t: key => key,
+    useSessions: selector => selector({ ids: ['s1'], byId: { s1: { displayTitle: 'Demo', retainedBy: {} } } }),
+    watch: () => () => {},
+    snapshotOf: () => hookStates[2],
+  })
+  const text = JSON.stringify(tree)
+  assert.ok(text.includes('removedBadge'))
+  assert.ok(text.includes('data-kind":"removed"'))
+  assert.ok(text.includes('data-kind":"same"'))
+  assert.ok(text.includes('data-fixed":"true"'))
+  assert.ok(text.includes('sharedFixed'))
 })

@@ -47,6 +47,22 @@ window.__ModuleLoader__.load({
 [data-context-lens-page] .clp-entry[data-role='tool'] { border-left-color: var(--dsw-alias-state-warning-primary, #b7791f); }
 [data-context-lens-page] .clp-entryHead { color: var(--dsw-alias-label-secondary, inherit); font-size: 11px; }
 [data-context-lens-page] .clp-entryText { max-height: 110px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+[data-context-lens-page] .clp-diff { padding: 4px 4px 8px 26px; }
+[data-context-lens-page] .clp-diffHead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 2px 4px 6px; font-weight: 500; }
+[data-context-lens-page] .clp-diffNote { color: var(--dsw-alias-label-tertiary, inherit); font-size: 11px; font-weight: 400; }
+[data-context-lens-page] .clp-shared { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; background: var(--dsw-alias-interactive-bg, rgba(127,127,127,.08)); color: var(--dsw-alias-label-tertiary, inherit); }
+[data-context-lens-page] .clp-shared:before { content: '▸'; }
+[data-context-lens-page] .clp-regionItem { margin-top: 4px; padding: 4px 8px; border: 1px solid transparent; border-left-width: 3px; border-radius: 6px; }
+[data-context-lens-page] .clp-regionItem[data-kind='added'] { border-left-color: var(--dsw-alias-state-info-primary, #2f6fed); background: var(--dsw-alias-state-info-bg, rgba(47,111,237,.12)); }
+[data-context-lens-page] .clp-regionItem[data-kind='removed'] { border-left-color: var(--dsw-alias-state-success-primary, #79b879); background: var(--dsw-alias-state-success-bg, #e6f4ea); }
+[data-context-lens-page] .clp-regionItem[data-kind='same'] { border-left-color: var(--dsw-alias-border-l2, rgba(127,127,127,.3)); }
+[data-context-lens-page] .clp-itemHead { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 22px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+[data-context-lens-page] .clp-itemHead:focus-visible { outline: 2px solid var(--dsw-alias-interactive-accent, #4c8bf5); outline-offset: 2px; }
+[data-context-lens-page] .clp-badge { flex: none; padding: 0 6px; border-radius: 999px; font-size: 11px; }
+[data-context-lens-page] .clp-regionItem[data-kind='added'] .clp-badge { color: var(--dsw-alias-state-info-primary, #2f6fed); background: var(--dsw-alias-state-info-bg, rgba(47,111,237,.12)); }
+[data-context-lens-page] .clp-regionItem[data-kind='removed'] .clp-badge { color: var(--dsw-alias-state-success-primary, #4f8a4f); background: var(--dsw-alias-state-success-bg, #e6f4ea); }
+[data-context-lens-page] .clp-itemRole { flex: none; color: var(--dsw-alias-label-tertiary, inherit); font-size: 11px; }
+[data-context-lens-page] .clp-itemPreview { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-context-lens-page] .clp-blank { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--dsw-alias-label-tertiary, inherit); }
 [data-context-lens-page] .clp-blankGlyph { font-size: 28px; }
 `,
@@ -128,6 +144,11 @@ function summarizeMessages(messages) {
 
 function identityOf(item) {
   return `${item.role}:${item.id.startsWith('index:') ? hashOf(`${item.text}\u0000${item.reasoning}`) : item.id}`
+}
+
+/** Stable identity usable as a React key across turns and windows. */
+function itemKeyOf(item) {
+  return identityOf(item)
 }
 
 function reasoningIdentityOf(item) {
@@ -310,6 +331,8 @@ function analyzeEvents(entries) {
       const result = compareContexts(prior, step.items, { ...meta, lookback, priorReasoning })
       result.commonPrefix = prefix(immediate)
       result.prefixRatio = result.commonPrefix / Math.max(step.items.length, 1)
+      result.currentItems = step.items
+      result.priorItems = prior
       return result
     }
     const previous = build(immediate, 1, Math.max(0, index - 1))
@@ -348,6 +371,12 @@ function comparisonFor(analysis, turn, step, window = 'recent') {
       added: '新增',
       replay: '思考重注入',
       contextDiff: '上下文差异',
+      diffHint: '区域不同，不是内容改动 diff',
+      sharedFixed: '与上一轮完全相同：{count} 项（固定折叠）',
+      addedBadge: '+ 新增',
+      removedBadge: '− 移除',
+      sameBadge: '相同',
+      diffEmpty: '前缀之后没有区域差异',
       reasoning: '思考过程',
       response: '正式输出',
       tools: '工具调用',
@@ -380,6 +409,12 @@ function comparisonFor(analysis, turn, step, window = 'recent') {
       added: 'Added',
       replay: 'Reasoning replay',
       contextDiff: 'Context differences',
+      diffHint: 'Region differences, not an edit diff',
+      sharedFixed: 'Identical to previous turn: {count} items (always folded)',
+      addedBadge: '+ added',
+      removedBadge: '− removed',
+      sameBadge: 'same',
+      diffEmpty: 'No regional difference after the prefix',
       reasoning: 'Reasoning',
       response: 'Response',
       tools: 'Tool calls',
@@ -412,14 +447,56 @@ function comparisonFor(analysis, turn, step, window = 'recent') {
       )
     }
 
-    function ItemList({ items, t, missing }) {
-      if (items.length === 0) return h('p', { className: 'clp-empty' }, t(missing))
-      return items.map((item, index) => h('div', {
-        className: 'clp-entry', key: `${item.role}-${index}`, 'data-role': item.role,
-      },
-        h('div', { className: 'clp-entryHead' }, item.role),
-        h('div', { className: 'clp-entryText' }, item.text || item.reasoning),
-      ))
+    function RegionItem({ item, kind, label, open, onToggle }) {
+      const text = item.text || item.reasoning || ''
+      const key = itemKeyOf(item)
+      const preview = text.length > 72 ? `${text.slice(0, 72)}…` : text
+      return h('div', { className: 'clp-regionItem', 'data-kind': kind, key },
+        h('button', { type: 'button', className: 'clp-itemHead', 'aria-expanded': open, onClick: onToggle },
+          h('span', { className: 'clp-badge' }, label),
+          h('span', { className: 'clp-itemRole' }, item.role),
+          h('span', { className: 'clp-itemPreview' }, preview),
+          h('span', { className: 'clp-chevron', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
+        ),
+        open ? h('pre', { className: 'clp-text' }, text) : null,
+      )
+    }
+
+    function DiffRegion({ comparison, t, open, toggle }) {
+      const items = comparison?.currentItems ?? []
+      const prefix = comparison?.commonPrefix ?? 0
+      const addedKeys = new Set((comparison?.added ?? []).map(itemKeyOf))
+      const suffix = items.slice(prefix)
+      const removed = comparison?.removed ?? []
+      return h('div', { className: 'clp-diff' },
+        h('div', { className: 'clp-diffHead' },
+          h('span', {}, t('contextDiff')),
+          h('span', { className: 'clp-diffNote' }, t('diffHint')),
+        ),
+        h('div', { className: 'clp-shared', 'data-fixed': 'true' }, t('sharedFixed', { count: prefix })),
+        suffix.length === 0 && removed.length === 0
+          ? h('p', { className: 'clp-empty' }, t('diffEmpty'))
+          : null,
+        suffix.map(item => {
+          const key = itemKeyOf(item)
+          const added = addedKeys.has(key)
+          return h(RegionItem, {
+            key, item,
+            kind: added ? 'added' : 'same',
+            label: added ? t('addedBadge') : t('sameBadge'),
+            open: open[key] === true,
+            onToggle: toggle(key),
+          })
+        }),
+        removed.map(item => h(RegionItem, {
+          key: itemKeyOf(item),
+          item,
+          kind: 'removed',
+          label: t('removedBadge'),
+          open: open[itemKeyOf(item)] === true,
+          onToggle: toggle(itemKeyOf(item)),
+        })),
+      )
     }
 
     function PanelIcon({ size }) {
@@ -554,33 +631,27 @@ function comparisonFor(analysis, turn, step, window = 'recent') {
                 h('div', { className: 'clp-bar', 'aria-hidden': 'true' },
                   h('div', { className: 'clp-barFill', style: { width: `${ratio}%` } }),
                 ),
+                replay > 0 ? h('p', { className: 'clp-hint' }, t('replayHint')) : null,
+                comparison === null ? null : h(DiffRegion, { comparison, t, open, toggle }),
                 h('div', { className: 'clp-folds' },
                   h(Fold, {
-                    glyph: '≷', title: t('contextDiff'),
-                    preview: comparison === null ? '' : `${comparison.added.length} + / ${comparison.removed.length} −`,
-                    open: open[`${key}-diff`] === true, onToggle: toggle(`${key}-diff`),
-                  },
-                    comparison === null ? null : h('div', {},
-                      replay > 0 ? h('p', { className: 'clp-hint' }, t('replayHint')) : null,
-                      h(ItemList, { items: comparison.added, t, missing: 'noAdded' }),
-                      h(ItemList, { items: comparison.removed, t, missing: 'noRemoved' }),
-                    ),
-                  ),
-                  h(Fold, {
                     glyph: '◌', title: t('reasoning'), preview: preview(output.reasoning),
-                    open: open[`${key}-reasoning`] === true, onToggle: toggle(`${key}-reasoning`),
+                    open: open[`reason:${hashOf(output.reasoning)}`] === true,
+                    onToggle: toggle(`reason:${hashOf(output.reasoning)}`),
                   }, output.reasoning
                     ? h('pre', { className: 'clp-text' }, output.reasoning)
                     : h('p', { className: 'clp-empty' }, t('emptyReasoning'))),
                   h(Fold, {
                     glyph: '✓', title: t('response'), preview: preview(output.response),
-                    open: open[`${key}-response`] === true, onToggle: toggle(`${key}-response`),
+                    open: open[`response:${hashOf(output.response)}`] === true,
+                    onToggle: toggle(`response:${hashOf(output.response)}`),
                   }, output.response
                     ? h('pre', { className: 'clp-text' }, output.response)
                     : h('p', { className: 'clp-empty' }, t('emptyResponse'))),
                   h(Fold, {
                     glyph: '⌘', title: t('tools'), preview: t('items', { count: output.tools.length }),
-                    open: open[`${key}-tools`] === true, onToggle: toggle(`${key}-tools`),
+                    open: open[`tools:${output.tools.map(tool => tool.callId).join('|') || 'empty'}`] === true,
+                    onToggle: toggle(`tools:${output.tools.map(tool => tool.callId).join('|') || 'empty'}`),
                   }, output.tools.length === 0
                     ? h('p', { className: 'clp-empty' }, t('emptyTools'))
                     : output.tools.map(tool => h('div', { className: 'clp-entry', key: tool.callId },
