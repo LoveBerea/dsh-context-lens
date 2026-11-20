@@ -109,11 +109,16 @@ export function compareContexts(previous, current, meta = {}) {
     return false
   })
 
-  const priorReasoning = new Set(before.filter(item => item.reasoning).map(reasoningIdentityOf))
+  const priorReasoning = new Set([
+    ...before.filter(item => item.reasoning).map(reasoningIdentityOf),
+    ...(Array.isArray(meta.priorReasoning)
+      ? meta.priorReasoning.filter(text => typeof text === 'string' && text.length > 0).map(text => hashOf(text.trim()))
+      : []),
+  ])
   const reasoning = after.filter(item => item.reasoning)
   const replayedReasoning = reasoning.filter(item => priorReasoning.has(reasoningIdentityOf(item)))
 
-  const denominator = Math.max(before.length, 1)
+  const denominator = Math.max(after.length, 1)
   return {
     ...meta,
     previousCount: before.length,
@@ -121,7 +126,10 @@ export function compareContexts(previous, current, meta = {}) {
     commonPrefix,
     prefixRatio: commonPrefix / denominator,
     shared,
+    /** Share of THIS round's context already seen earlier: below 100% whenever new context arrives. */
     overlapRatio: shared / denominator,
+    newCount: after.length - shared,
+    newRatio: 1 - shared / denominator,
     added,
     removed,
     reasoningCount: reasoning.length,
@@ -180,10 +188,6 @@ export function analyzeEvents(entries) {
     if (event === null || typeof event !== 'object' || event.data == null) continue
     const data = event.data
 
-    if (event.type === 'step/start') {
-      steps.push({ turn: data.turn, step: data.step, seq: event.seq, items: surface.map(item => ({ ...item })) })
-      continue
-    }
     if (event.type === 'tool/call') {
       const key = `${data.turn}:${data.step}`
       const calls = toolCalls.get(key) ?? []
@@ -194,10 +198,14 @@ export function analyzeEvents(entries) {
 
     const item = itemFromEvent(event)
     if (item === null) continue
+    const isAssistant = event.type === 'assistant/message'
+    if (isAssistant) {
+      steps.push({ turn: data.turn, step: data.step, seq: event.seq, items: surface.map(item => ({ ...item })) })
+    }
     applySurfaceOperation(surface, event)
     surface.push(item)
 
-    if (event.type === 'assistant/message') {
+    if (isAssistant) {
       const key = `${data.turn}:${data.step}`
       outputs.push({
         turn: data.turn,
@@ -215,19 +223,42 @@ export function analyzeEvents(entries) {
     output.tools = toolCalls.get(`${output.turn}:${output.step}`) ?? []
   }
 
-  const comparisons = steps.map((step, index) => compareContexts(
-    index === 0 ? [] : steps[index - 1].items,
-    step.items,
-    { turn: step.turn, step: step.step, atSeq: step.seq },
-  ))
+  const comparisons = steps.map((step, index) => {
+    const meta = { turn: step.turn, step: step.step, atSeq: step.seq }
+    const immediate = index === 0 ? [] : steps[index - 1].items
+    const unionOf = (count) => {
+      const from = count === Infinity ? 0 : Math.max(0, index - count)
+      return steps.slice(from, index).flatMap(candidate => candidate.items)
+    }
+    const prefix = (prior) => {
+      let length = 0
+      while (length < prior.length && length < step.items.length
+        && identityOf(prior[length]) === identityOf(step.items[length])) {
+        length += 1
+      }
+      return length
+    }
+    const build = (prior, lookback, from) => {
+      const priorReasoning = outputs.slice(from, index).map(output => output.reasoning).filter(Boolean)
+      const result = compareContexts(prior, step.items, { ...meta, lookback, priorReasoning })
+      result.commonPrefix = prefix(immediate)
+      result.prefixRatio = result.commonPrefix / Math.max(step.items.length, 1)
+      return result
+    }
+    const previous = build(immediate, 1, Math.max(0, index - 1))
+    const recent = build(unionOf(3), 3, Math.max(0, index - 3))
+    const all = build(unionOf(Infinity), 'all', 0)
+    return { ...meta, previous, recent, all, ...recent }
+  })
 
   return { steps, outputs, comparisons, surface }
 }
 
-/** Find the comparison matching a turn and, when possible, its exact step. */
-export function comparisonFor(analysis, turn, step) {
+/** Find one comparison for a turn and step in the requested lookback window. */
+export function comparisonFor(analysis, turn, step, window = 'recent') {
   const list = analysis?.comparisons ?? []
-  return list.find(item => item.turn === turn && item.step === step)
+  const found = list.find(item => item.turn === turn && item.step === step)
     ?? list.find(item => item.turn === turn)
-    ?? null
+  if (found === undefined || found === null) return null
+  return found[window] ?? found.recent ?? null
 }

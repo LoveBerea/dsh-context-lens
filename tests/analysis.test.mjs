@@ -52,7 +52,10 @@ test('detects prefix, additions, removals, and replayed reasoning', () => {
   assert.equal(result.added.length, 2)
   assert.equal(result.removed.length, 0)
   assert.equal(result.replayedReasoning.length, 2)
-  assert.equal(result.overlapRatio, 1)
+  assert.equal(result.overlapRatio, 0.5)
+  assert.equal(result.newCount, 2)
+  assert.equal(result.newRatio, 0.5)
+  assert.equal(result.prefixRatio, 0.5)
   assert.equal(result.replayRatio, 1)
 })
 
@@ -92,29 +95,61 @@ test('rebuilds per-step contexts and turn outputs from a session window', () => 
   ]
   const analysis = analyzeEvents(entries)
   assert.equal(analysis.steps.length, 3)
-  assert.equal(analysis.steps[0].items.length, 0)
+  assert.equal(analysis.steps[0].items.length, 1)
   assert.equal(analysis.steps[1].items.length, 2)
   assert.equal(analysis.comparisons.length, 3)
   assert.equal(analysis.outputs.length, 3)
   assert.equal(analysis.outputs[0].reasoning, 'think')
   assert.equal(analysis.outputs[0].tools[0].name, 'read')
   assert.equal(analysis.comparisons[2].replayedReasoning.length, 2)
-  assert.equal(comparisonFor(analysis, 1, 3).atSeq, 8)
+  assert.equal(comparisonFor(analysis, 1, 3).atSeq, 9)
   assert.equal(comparisonFor(analysis, 9, 1), null)
 })
 
 test('applies surface replace before rebuilding later contexts', () => {
   const entries = [
-    event('step/start', { turn: 1, step: 1 }, 1),
-    event('user/message', { content: [{ type: 'text', text: 'old' }] }, 2),
-    event('user/message', { content: [{ type: 'text', text: 'kept' }] }, 3),
+    event('user/message', { content: [{ type: 'text', text: 'old' }] }, 1),
+    event('user/message', { content: [{ type: 'text', text: 'kept' }] }, 2),
+    event('assistant/message', {
+      turn: 1, step: 1, message: message([{ type: 'text', text: 'a' }], 'a1'),
+    }, 3),
     event('user/message', { content: [{ type: 'text', text: 'fresh' }] }, 4, {
-      surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 },
+      surfaceOp: { op: 'replace', startSeq: 1, endSeq: 1 },
     }),
-    event('step/start', { turn: 2, step: 1 }, 5),
+    event('assistant/message', {
+      turn: 2, step: 1, message: message([{ type: 'text', text: 'b' }], 'a2'),
+    }, 5),
   ]
   const analysis = analyzeEvents(entries)
-  assert.equal(analysis.steps[0].items.length, 0)
-  assert.deepEqual(analysis.steps[1].items.map(item => item.text), ['kept', 'fresh'])
+  assert.deepEqual(analysis.steps[0].items.map(item => item.text), ['old', 'kept'])
+  assert.deepEqual(analysis.steps[1].items.map(item => item.text), ['kept', 'a', 'fresh'])
   assert.equal(analysis.comparisons[1].added.length, 2)
+  assert.equal(analysis.comparisons[1].removed.length, 1)
+})
+
+test('grows overlap below 100% and compares against previous or several turns', () => {
+  const entries = [
+    event('step/start', { turn: 1, step: 1 }, 1),
+    event('user/message', { content: [{ type: 'text', text: 'first' }] }, 2),
+    event('step/start', { turn: 2, step: 1 }, 3),
+    event('assistant/message', {
+      turn: 2,
+      step: 1,
+      message: message([{ type: 'reasoning', text: 'plan' }, { type: 'text', text: 'a' }], 'a1'),
+    }, 4),
+    event('step/start', { turn: 3, step: 1 }, 5),
+    event('assistant/message', {
+      turn: 3,
+      step: 1,
+      message: message([{ type: 'reasoning', text: 'plan' }, { type: 'text', text: 'b' }], 'a2'),
+    }, 6),
+  ]
+  const analysis = analyzeEvents(entries)
+  const recent = comparisonFor(analysis, 3, 1, 'recent')
+  assert.equal(recent.overlapRatio, 0.5)
+  assert.equal(recent.newCount, 1)
+  assert.equal(recent.replayedReasoning.length, 1)
+  assert.equal(comparisonFor(analysis, 3, 1, 'previous').lookback, 1)
+  assert.equal(comparisonFor(analysis, 3, 1, 'all').lookback, 'all')
+  assert.equal(analysis.comparisons[0].recent.overlapRatio, 0)
 })

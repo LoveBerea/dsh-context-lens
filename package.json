@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-lens",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Context cache analysis for dsh sessions: turn-grouped, separately collapsible reasoning and output, with input-context overlap and diff.",
   "type": "module",
   "main": "index.js",
@@ -29,8 +29,10 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-client-ui-chat",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-primitives"
       ]
     }
   },
